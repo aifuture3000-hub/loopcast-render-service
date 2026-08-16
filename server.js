@@ -108,7 +108,7 @@ function runFFmpeg(args) {
 // --- Render pipeline -------------------------------------------------------
 
 async function processRender(jobId, payload) {
-  const { segments, audio_url, targetSeconds, captions, captionStyle, clipDuration = 8, assetType = "video" } = payload;
+  const { segments, audio_url, targetSeconds, captions, captionStyle, clipDuration = 8, assetType = "video", music_url = null, music_volume = 0.15 } = payload;
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "render-"));
 
   try {
@@ -126,6 +126,18 @@ async function processRender(jobId, payload) {
     if (audio_url) {
       audioFile = path.join(workDir, "audio.mp3");
       await downloadFile(audio_url, audioFile);
+    }
+
+    // 2b. Download background music
+    let musicFile = null;
+    if (music_url) {
+      try {
+        musicFile = path.join(workDir, "music.mp3");
+        await downloadFile(music_url, musicFile);
+      } catch (e) {
+        console.error(`[${jobId}] music download failed:`, e.message);
+        musicFile = null;
+      }
     }
 
     // 3. Build ASS caption file
@@ -148,9 +160,13 @@ async function processRender(jobId, payload) {
         args.push("-i", segFiles[i]);
       }
     }
-    // Audio input
+    // Audio input (narration)
     if (audioFile) {
       args.push("-i", audioFile);
+    }
+    // Music input
+    if (musicFile) {
+      args.push("-i", musicFile);
     }
 
     // filter_complex: normalize each segment → concat → burn subtitles
@@ -175,10 +191,23 @@ async function processRender(jobId, payload) {
       filter += `[vcat]null[vout]`;
     }
 
+    // Audio mixing: combine narration and background music at lower volume
+    const audioIdx = numSegs;
+    const musicIdx = numSegs + (audioFile ? 1 : 0);
+    if (audioFile && musicFile) {
+      filter += `;[${audioIdx}:a]aformat=sample_rates=44100:channel_layouts=stereo[narration_a];[${musicIdx}:a]volume=${music_volume},aformat=sample_rates=44100:channel_layouts=stereo[music_low];[narration_a][music_low]amix=inputs=2:duration=first:dropout_transition=0[aout]`;
+    } else if (musicFile) {
+      filter += `;[${musicIdx}:a]volume=${music_volume},aformat=sample_rates=44100:channel_layouts=stereo[aout]`;
+    }
+
     args.push("-filter_complex", filter, "-map", "[vout]");
 
-    if (audioFile) {
-      args.push("-map", `${numSegs}:a`, "-c:a", "aac", "-b:a", "128k");
+    if (audioFile && musicFile) {
+      args.push("-map", "[aout]", "-c:a", "aac", "-b:a", "128k");
+    } else if (audioFile) {
+      args.push("-map", `${audioIdx}:a`, "-c:a", "aac", "-b:a", "128k");
+    } else if (musicFile) {
+      args.push("-map", "[aout]", "-c:a", "aac", "-b:a", "128k");
     }
 
     args.push(
