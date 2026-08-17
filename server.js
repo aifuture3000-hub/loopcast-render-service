@@ -295,6 +295,32 @@ app.get("/render/:id", (req, res) => {
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
+// R2 upload test endpoint — returns detailed error info
+app.get("/test-r2", async (req, res) => {
+  const testKey = `renders/test-${Date.now()}.txt`;
+  try {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: testKey,
+        Body: Buffer.from("test"),
+        ContentType: "text/plain",
+      })
+    );
+    res.json({ ok: true, key: testKey, bucket: process.env.R2_BUCKET_NAME });
+  } catch (e) {
+    res.json({
+      ok: false,
+      error: e.message,
+      code: e.Code || e.name,
+      bucket: process.env.R2_BUCKET_NAME,
+      hasKeyId: !!process.env.R2_ACCESS_KEY_ID,
+      hasSecret: !!process.env.R2_SECRET_ACCESS_KEY,
+      $metadata: e.$metadata,
+    });
+  }
+});
+
 // Diagnostics endpoint (auth required) — checks FFmpeg + R2 config
 app.get("/diagnostics", async (req, res) => {
   const diag = {
