@@ -12,6 +12,19 @@ const {
 const app = express();
 app.use(express.json({ limit: "10mb" }));
 
+// --- Global error handlers — prevent process crash on unhandled rejections ---
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION:", err.message, err.stack);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("UNHANDLED REJECTION:", reason?.message || reason);
+});
+
+function logMem(label) {
+  const m = process.memoryUsage();
+  console.log(`[mem:${label}] rss=${Math.round(m.rss / 1024 / 1024)}MB heap=${Math.round(m.heapUsed / 1024 / 1024)}MB`);
+}
+
 const SERVICE_KEY = process.env.FFMPEG_SERVICE_KEY_V2 || process.env.FFMPEG_SERVICE_KEY;
 
 // --- Auth middleware -------------------------------------------------------
@@ -115,14 +128,17 @@ async function processRender(jobId, payload) {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "render-"));
 
   try {
+    logMem("render-start");
     // 1. Download all segments
     const segFiles = [];
     for (let i = 0; i < segments.length; i++) {
       const ext = assetType === "image" ? ".jpg" : ".mp4";
       const f = path.join(workDir, `seg${i}${ext}`);
+      console.log(`[${jobId}] downloading segment ${i + 1}/${segments.length}`);
       await downloadFile(segments[i], f);
       segFiles.push(f);
     }
+    logMem("after-downloads");
 
     // 2. Download narration audio
     let audioFile = null;
@@ -214,7 +230,7 @@ async function processRender(jobId, payload) {
     }
 
     args.push(
-      "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
       "-r", "30", "-pix_fmt", "yuv420p",
       "-t", String(target),
       "-movflags", "+faststart",
@@ -223,12 +239,15 @@ async function processRender(jobId, payload) {
     );
 
     console.log(`[${jobId}] ffmpeg start: ${numSegs} ${assetType} segments, target ${target}s`);
+    logMem("before-ffmpeg");
     await runFFmpeg(args);
+    logMem("after-ffmpeg");
     console.log(`[${jobId}] ffmpeg done, uploading to R2`);
 
     // 5. Upload to R2
     const key = `renders/${jobId}.mp4`;
     const fileBuf = fs.readFileSync(path.join(workDir, "output.mp4"));
+    console.log(`[${jobId}] output size: ${Math.round(fileBuf.length / 1024)}KB`);
     await s3.send(
       new PutObjectCommand({
         Bucket: process.env.R2_BUCKET_NAME,
@@ -240,9 +259,10 @@ async function processRender(jobId, payload) {
 
     const publicUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
     jobs.set(jobId, { status: "done", url: publicUrl });
+    logMem("render-done");
     console.log(`[${jobId}] complete: ${publicUrl}`);
   } catch (e) {
-    console.error(`[${jobId}] failed:`, e.message);
+    console.error(`[${jobId}] failed:`, e.message, e.stack);
     jobs.set(jobId, { status: "failed", error: e.message });
   } finally {
     try {
@@ -260,7 +280,10 @@ app.post("/render", (req, res) => {
   }
   const jobId = crypto.randomUUID();
   jobs.set(jobId, { status: "pending" });
-  processRender(jobId, req.body);
+  processRender(jobId, req.body).catch((e) => {
+    console.error(`[${jobId}] processRender unhandled:`, e.message);
+    jobs.set(jobId, { status: "failed", error: e.message });
+  });
   res.json({ id: jobId });
 });
 
