@@ -12,7 +12,7 @@ const {
 const app = express();
 app.use(express.json({ limit: "10mb" }));
 
-const SERVICE_KEY = process.env.FFMPEG_SERVICE_KEY;
+const SERVICE_KEY = process.env.FFMPEG_SERVICE_KEY_V2 || process.env.FFMPEG_SERVICE_KEY;
 
 // --- Auth middleware -------------------------------------------------------
 app.use((req, res, next) => {
