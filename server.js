@@ -314,8 +314,12 @@ app.get("/test-r2", async (req, res) => {
       error: e.message,
       code: e.Code || e.name,
       bucket: process.env.R2_BUCKET_NAME,
-      hasKeyId: !!process.env.R2_ACCESS_KEY_ID,
-      hasSecret: !!process.env.R2_SECRET_ACCESS_KEY,
+      endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      accountId_prefix: process.env.R2_ACCOUNT_ID ? process.env.R2_ACCOUNT_ID.slice(0, 8) : null,
+      keyId_prefix: process.env.R2_ACCESS_KEY_ID ? process.env.R2_ACCESS_KEY_ID.slice(0, 8) : null,
+      keyId_length: process.env.R2_ACCESS_KEY_ID ? process.env.R2_ACCESS_KEY_ID.length : 0,
+      secret_length: process.env.R2_SECRET_ACCESS_KEY ? process.env.R2_SECRET_ACCESS_KEY.length : 0,
+      secret_has_spaces: process.env.R2_SECRET_ACCESS_KEY ? /\s/.test(process.env.R2_SECRET_ACCESS_KEY) : null,
       $metadata: e.$metadata,
     });
   }
