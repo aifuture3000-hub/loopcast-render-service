@@ -264,10 +264,52 @@ app.post("/render", (req, res) => {
 app.get("/render/:id", (req, res) => {
   const job = jobs.get(req.params.id);
   if (!job) return res.status(404).json({ status: "failed" });
-  res.json({ status: job.status, url: job.url || null });
+  res.json({ status: job.status, url: job.url || null, error: job.error || null });
 });
 
 app.get("/health", (req, res) => res.json({ ok: true }));
+
+// Diagnostics endpoint (auth required) — checks FFmpeg + R2 config
+app.get("/diagnostics", async (req, res) => {
+  const diag = {
+    ffmpeg: false,
+    r2_configured: false,
+    r2_vars: {},
+    env_vars: {},
+  };
+
+  // Check FFmpeg
+  try {
+    await new Promise((resolve, reject) => {
+      execFile("ffmpeg", ["-version"], (err, stdout) => {
+        if (err) {
+          diag.ffmpeg_error = err.message;
+          reject(err);
+        } else {
+          diag.ffmpeg = true;
+          diag.ffmpeg_version = stdout.slice(0, 100);
+          resolve();
+        }
+      });
+    });
+  } catch (e) {
+    diag.ffmpeg = false;
+    diag.ffmpeg_error = e.message;
+  }
+
+  // Check R2 env vars (show presence, not values)
+  const r2Vars = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME", "R2_PUBLIC_URL"];
+  for (const v of r2Vars) {
+    diag.r2_vars[v] = !!process.env[v];
+  }
+  diag.r2_configured = r2Vars.every((v) => !!process.env[v]);
+
+  // Check other env vars
+  diag.env_vars.FFMPEG_SERVICE_KEY = !!process.env.FFMPEG_SERVICE_KEY;
+  diag.env_vars.PORT = process.env.PORT || "3000";
+
+  res.json(diag);
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`FFmpeg render service listening on :${PORT}`));
