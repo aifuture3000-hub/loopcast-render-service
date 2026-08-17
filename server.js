@@ -191,7 +191,7 @@ async function processRender(jobId, payload) {
     // filter_complex: normalize each segment → concat → burn subtitles
     let filter = "";
     for (let i = 0; i < numSegs; i++) {
-      filter += `[${i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30`;
+      filter += `[${i}:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1,fps=30`;
       if (assetType !== "image") {
         filter += `,trim=duration=${clipDuration},setpts=PTS-STARTPTS`;
       }
@@ -230,7 +230,7 @@ async function processRender(jobId, payload) {
     }
 
     args.push(
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
       "-r", "30", "-pix_fmt", "yuv420p",
       "-t", String(target),
       "-movflags", "+faststart",
