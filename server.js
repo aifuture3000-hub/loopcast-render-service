@@ -42,7 +42,10 @@ const jobs = new Map();
 // --- Helpers ---------------------------------------------------------------
 
 async function downloadFile(url, dest) {
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: { "User-Agent": "LoopcastRenderService/1.0" },
+    redirect: "follow",
+  });
   if (!res.ok) throw new Error(`download ${url}: ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
   fs.writeFileSync(dest, buf);
