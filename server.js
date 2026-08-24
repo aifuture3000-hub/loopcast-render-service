@@ -77,10 +77,10 @@ function fmtAssTime(sec) {
 function buildAss(captions, styleName) {
   // ASS colour format: &HAABBGGRR  (AA=alpha 00=opaque, then BGR)
   const styles = {
-    bold_white:      { font: "Arial Black",      size: 76, primary: "&H00FFFFFF", outline: "&H00000000", bold: -1, outlineW: 8, shadow: 0, uppercase: true, marginV: 1344 },
-    karaoke_yellow:  { font: "Arial Black",      size: 68, primary: "&H0000EBFF", outline: "&H00000000", bold: -1, outlineW: 4, shadow: 0, marginV: 1344 },
-    minimal_clean:   { font: "Helvetica Neue",   size: 60, primary: "&H00FFFFFF", outline: "&H80000000", bold: 0,  outlineW: 1, shadow: 2, marginV: 1344 },
-    neon_glow:       { font: "Arial Black",      size: 68, primary: "&H00FFFFFF", outline: "&H00FF00FF", bold: -1, outlineW: 3, shadow: 2, marginV: 1344 },
+    bold_white:      { font: "Arial Black",      size: 76, primary: "&H00FFFFFF", outline: "&H00000000", bold: -1, outlineW: 8, shadow: 0, uppercase: true, marginV: 1152 },
+    karaoke_yellow:  { font: "Arial Black",      size: 68, primary: "&H0000EBFF", outline: "&H00000000", bold: -1, outlineW: 4, shadow: 0, marginV: 1152 },
+    minimal_clean:   { font: "Helvetica Neue",   size: 60, primary: "&H00FFFFFF", outline: "&H80000000", bold: 0,  outlineW: 1, shadow: 2, marginV: 1152 },
+    neon_glow:       { font: "Arial Black",      size: 68, primary: "&H00FFFFFF", outline: "&H00FF00FF", bold: -1, outlineW: 3, shadow: 2, marginV: 1152 },
   };
   const s = styles[styleName] || styles.bold_white;
 
