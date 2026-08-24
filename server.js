@@ -77,10 +77,10 @@ function fmtAssTime(sec) {
 function buildAss(captions, styleName) {
   // ASS colour format: &HAABBGGRR  (AA=alpha 00=opaque, then BGR)
   const styles = {
-    bold_white:      { font: "Arial Black",      size: 76, primary: "&H00FFFFFF", outline: "&H00000000", bold: -1, outlineW: 4, shadow: 0 },
-    karaoke_yellow:  { font: "Arial Black",      size: 68, primary: "&H0000EBFF", outline: "&H00000000", bold: -1, outlineW: 4, shadow: 0 },
-    minimal_clean:   { font: "Helvetica Neue",   size: 60, primary: "&H00FFFFFF", outline: "&H80000000", bold: 0,  outlineW: 1, shadow: 2 },
-    neon_glow:       { font: "Arial Black",      size: 68, primary: "&H00FFFFFF", outline: "&H00FF00FF", bold: -1, outlineW: 3, shadow: 2 },
+    bold_white:      { font: "Arial Black",      size: 76, primary: "&H00FFFFFF", outline: "&H00000000", bold: -1, outlineW: 8, shadow: 0, uppercase: true, marginV: 1344 },
+    karaoke_yellow:  { font: "Arial Black",      size: 68, primary: "&H0000EBFF", outline: "&H00000000", bold: -1, outlineW: 4, shadow: 0, marginV: 1344 },
+    minimal_clean:   { font: "Helvetica Neue",   size: 60, primary: "&H00FFFFFF", outline: "&H80000000", bold: 0,  outlineW: 1, shadow: 2, marginV: 1344 },
+    neon_glow:       { font: "Arial Black",      size: 68, primary: "&H00FFFFFF", outline: "&H00FF00FF", bold: -1, outlineW: 3, shadow: 2, marginV: 1344 },
   };
   const s = styles[styleName] || styles.bold_white;
 
@@ -93,14 +93,16 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${s.font},${s.size},${s.primary},${s.outline},&H80000000,${s.bold},0,0,0,100,100,0,0,1,${s.outlineW},${s.shadow},2,80,80,120,1
+Style: Default,${s.font},${s.size},${s.primary},${s.outline},&H80000000,${s.bold},0,0,0,100,100,0,0,1,${s.outlineW},${s.shadow},2,80,80,${s.marginV || 700},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
 
   const events = captions
     .map((c) => {
-      const text = String(c.text).replace(/\n/g, "\\N");
+      let text = String(c.text);
+      if (s.uppercase) text = text.toUpperCase();
+      text = text.replace(/\n/g, "\\N");
       return `Dialogue: 0,${fmtAssTime(c.start)},${fmtAssTime(c.start + c.length)},Default,,0,0,0,,${text}`;
     })
     .join("\n");
