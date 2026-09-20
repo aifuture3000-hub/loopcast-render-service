@@ -77,10 +77,10 @@ function fmtAssTime(sec) {
 function buildAss(captions, styleName) {
   // ASS colour format: &HAABBGGRR  (AA=alpha 00=opaque, then BGR)
   const styles = {
-    bold_white:      { font: "Arial Black",      size: 76, primary: "&H00FFFFFF", outline: "&H00000000", bold: -1, outlineW: 8, shadow: 0, uppercase: true, marginV: 288 },
-    karaoke_yellow:  { font: "Arial Black",      size: 68, primary: "&H0000EBFF", outline: "&H00000000", bold: -1, outlineW: 4, shadow: 0, marginV: 288 },
-    minimal_clean:   { font: "Helvetica Neue",   size: 60, primary: "&H00FFFFFF", outline: "&H80000000", bold: 0,  outlineW: 1, shadow: 2, marginV: 288 },
-    neon_glow:       { font: "Arial Black",      size: 68, primary: "&H00FFFFFF", outline: "&H00FF00FF", bold: -1, outlineW: 3, shadow: 2, marginV: 288 },
+    bold_white:      { font: "Arial Black",      size: 76, primary: "&H00FFFFFF", outline: "&H00000000", bold: -1, outlineW: 8, shadow: 0, uppercase: true, marginV: 480 },
+    karaoke_yellow:  { font: "Arial Black",      size: 68, primary: "&H0000EBFF", outline: "&H00000000", bold: -1, outlineW: 4, shadow: 0, marginV: 480 },
+    minimal_clean:   { font: "Helvetica Neue",   size: 60, primary: "&H00FFFFFF", outline: "&H80000000", bold: 0,  outlineW: 1, shadow: 2, marginV: 480 },
+    neon_glow:       { font: "Arial Black",      size: 68, primary: "&H00FFFFFF", outline: "&H00FF00FF", bold: -1, outlineW: 3, shadow: 2, marginV: 480 },
   };
   const s = styles[styleName] || styles.bold_white;
 
@@ -123,6 +123,17 @@ function runFFmpeg(args) {
   });
 }
 
+// Returns the duration of an audio file in seconds via ffprobe, or null on error.
+function getAudioDuration(file) {
+  return new Promise((resolve) => {
+    execFile("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file], (err, stdout) => {
+      if (err) { resolve(null); return; }
+      const dur = parseFloat(stdout.trim());
+      resolve(isNaN(dur) ? null : dur);
+    });
+  });
+}
+
 // --- Render pipeline -------------------------------------------------------
 
 async function processRender(jobId, payload) {
@@ -161,11 +172,35 @@ async function processRender(jobId, payload) {
       }
     }
 
-    // 3. Build ASS caption file
+    // 3. Build ASS caption file — scale captions to match actual audio duration
+    // to prevent sync drift (captions running ahead of narration). This is
+    // especially important for estimated-timing captions where the word rate
+    // may not match the actual TTS speed. Word-timing captions (from ElevenLabs)
+    // should already be close to the audio duration and won't be significantly
+    // affected (only scales when drift exceeds 5%).
+    let adjustedCaptions = captions;
+    if (audioFile && captions && captions.length > 0) {
+      const audioDur = await getAudioDuration(audioFile);
+      if (audioDur && audioDur > 0) {
+        const lastC = captions[captions.length - 1];
+        const captionDur = lastC.start + lastC.length;
+        if (captionDur > 0) {
+          const scale = audioDur / captionDur;
+          if (scale > 1.05 && scale < 1.3) {
+            console.log(`[${jobId}] scaling captions by ${scale.toFixed(3)} (audio=${audioDur.toFixed(1)}s, captions=${captionDur.toFixed(1)}s)`);
+            adjustedCaptions = captions.map((c) => ({
+              text: c.text,
+              start: parseFloat((c.start * scale).toFixed(2)),
+              length: parseFloat((c.length * scale).toFixed(2)),
+            }));
+          }
+        }
+      }
+    }
     let assFile = null;
-    if (captions && captions.length > 0) {
+    if (adjustedCaptions && adjustedCaptions.length > 0) {
       assFile = path.join(workDir, "captions.ass");
-      fs.writeFileSync(assFile, buildAss(captions, captionStyle));
+      fs.writeFileSync(assFile, buildAss(adjustedCaptions, captionStyle));
     }
 
     // 4. Build FFmpeg command
@@ -173,10 +208,13 @@ async function processRender(jobId, payload) {
     const numSegs = segFiles.length;
     const args = [];
 
-    // Segment inputs — images get -loop 1 -t {clipDuration}, videos are plain -i
+    // Segment inputs — images get -loop 1 (infinite), videos are plain -i.
+    // Duration is controlled by trim in the filter, not -t on the input —
+    // using -t on a looped image input can cause the concat filter to stall
+    // on the first segment (only one image shows for the entire video).
     for (let i = 0; i < numSegs; i++) {
       if (assetType === "image") {
-        args.push("-loop", "1", "-t", String(clipDuration), "-i", segFiles[i]);
+        args.push("-loop", "1", "-i", segFiles[i]);
       } else {
         args.push("-i", segFiles[i]);
       }
@@ -191,13 +229,34 @@ async function processRender(jobId, payload) {
     }
 
     // filter_complex: normalize each segment → concat → burn subtitles
+    // For images: apply a Ken Burns effect (slow zoom/pan) for subtle motion
+    // instead of a completely static frame. Motion pattern alternates by
+    // index for visual variety. Scale to 2x before zoompan to give room for
+    // the zoom/pan to work within. trim+setpts on ALL segments (including
+    // images) ensures concat doesn't stall on the first segment.
     let filter = "";
+    const totalFrames = Math.round(clipDuration * 30);
     for (let i = 0; i < numSegs; i++) {
-      filter += `[${i}:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1,fps=30`;
-      if (assetType !== "image") {
-        filter += `,trim=duration=${clipDuration},setpts=PTS-STARTPTS`;
+      if (assetType === "image") {
+        const motion = i % 4;
+        let zp;
+        if (motion === 0) {
+          // Slow zoom in, centered
+          zp = `zoompan=z='min(zoom+0.0015,1.4)':d=${totalFrames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=720x1280:fps=30`;
+        } else if (motion === 1) {
+          // Pan left → right at 1.3x zoom
+          zp = `zoompan=z=1.3:d=${totalFrames}:x='(iw-iw/zoom)*on/${Math.max(totalFrames - 1, 1)}':y='ih/2-(ih/zoom/2)':s=720x1280:fps=30`;
+        } else if (motion === 2) {
+          // Slow zoom in, offset center for variety
+          zp = `zoompan=z='min(zoom+0.0012,1.35)':d=${totalFrames}:x='iw*0.35-(iw/zoom/2)':y='ih*0.4-(ih/zoom/2)':s=720x1280:fps=30`;
+        } else {
+          // Pan right → left at 1.3x zoom
+          zp = `zoompan=z=1.3:d=${totalFrames}:x='(iw-iw/zoom)*(1-on/${Math.max(totalFrames - 1, 1)})':y='ih/2-(ih/zoom/2)':s=720x1280:fps=30`;
+        }
+        filter += `[${i}:v]scale=1440:2560:force_original_aspect_ratio=increase,crop=1440:2560,setsar=1,${zp},trim=duration=${clipDuration},setpts=PTS-STARTPTS[v${i}];`;
+      } else {
+        filter += `[${i}:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1,fps=30,trim=duration=${clipDuration},setpts=PTS-STARTPTS[v${i}];`;
       }
-      filter += `[v${i}];`;
     }
     for (let i = 0; i < numSegs; i++) {
       filter += `[v${i}]`;
