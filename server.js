@@ -185,9 +185,16 @@ async function processRender(jobId, payload) {
         const lastC = captions[captions.length - 1];
         const captionDur = lastC.start + lastC.length;
         if (captionDur > 0) {
-          const scale = audioDur / captionDur;
-          if (scale > 1.05 && scale < 1.3) {
-            console.log(`[${jobId}] scaling captions by ${scale.toFixed(3)} (audio=${audioDur.toFixed(1)}s, captions=${captionDur.toFixed(1)}s)`);
+          // Use the shorter of the audio duration or the target video length,
+          // since FFmpeg's -t flag truncates the output to `target` seconds.
+          const effectiveDur = Math.min(audioDur, target);
+          const scale = effectiveDur / captionDur;
+          // Always scale when drift exceeds 2% in either direction. This fixes
+          // both cases: captions ending before the audio (stretch) and captions
+          // running past the audio (compress). The previous 1.05–1.3 window
+          // left large drifts uncorrected, causing desync.
+          if (Math.abs(scale - 1) > 0.02) {
+            console.log(`[${jobId}] scaling captions by ${scale.toFixed(3)} (effective=${effectiveDur.toFixed(1)}s, captions=${captionDur.toFixed(1)}s)`);
             adjustedCaptions = captions.map((c) => ({
               text: c.text,
               start: parseFloat((c.start * scale).toFixed(2)),
@@ -362,7 +369,8 @@ app.get("/version", (req, res) => {
   res.json({
     caption_marginV: 480,
     ken_burns: true,
-    build: "2026-09-20-fix2",
+    caption_sync_fix: true,
+    build: "2026-09-20-caption-sync",
   });
 });
 
