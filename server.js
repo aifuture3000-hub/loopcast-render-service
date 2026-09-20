@@ -356,6 +356,16 @@ app.get("/render/:id", (req, res) => {
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
+// Version endpoint — returns the current caption marginV so we can verify
+// the deployed code has the latest fixes (480px = 25% of 1920px frame).
+app.get("/version", (req, res) => {
+  res.json({
+    caption_marginV: 480,
+    ken_burns: true,
+    build: "2026-09-20-fix2",
+  });
+});
+
 // R2 upload test endpoint — returns detailed error info
 app.get("/test-r2", async (req, res) => {
   const testKey = `renders/test-${Date.now()}.txt`;
