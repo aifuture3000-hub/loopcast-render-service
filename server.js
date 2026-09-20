@@ -178,6 +178,7 @@ async function processRender(jobId, payload) {
     // may not match the actual TTS speed. Word-timing captions (from ElevenLabs)
     // should already be close to the audio duration and won't be significantly
     // affected (only scales when drift exceeds 5%).
+    const target = Math.max(targetSeconds || 75, 10);
     let adjustedCaptions = captions;
     if (audioFile && captions && captions.length > 0) {
       const audioDur = await getAudioDuration(audioFile);
@@ -211,7 +212,6 @@ async function processRender(jobId, payload) {
     }
 
     // 4. Build FFmpeg command
-    const target = Math.max(targetSeconds || 75, 10);
     const numSegs = segFiles.length;
     const args = [];
 
@@ -370,7 +370,7 @@ app.get("/version", (req, res) => {
     caption_marginV: 480,
     ken_burns: true,
     caption_sync_fix: true,
-    build: "2026-09-20-caption-sync",
+    build: "2026-09-20-caption-sync-fix3",
   });
 });
 
